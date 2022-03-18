@@ -3,10 +3,19 @@ using System;
 
 namespace IdentityModel.AspNetCore.AccessTokenManagement.Azure
 {
+    /// <summary>
+    ///     Azure Key Vault options
+    /// </summary>
     public class KeyVaultOptions
     {
-        public Uri Url { get; set; }
+        /// <summary>
+        ///  Azure Key Vault Url
+        /// </summary>
+        public Uri? Url { get; set; }
 
-        public TokenCredential Credential { get; set; }
+        /// <summary>
+        ///  Azure Key credentials(client, certificate, default, etc.)
+        /// </summary>
+        public TokenCredential? Credential { get; set; }
     }
 }
