@@ -17,7 +17,6 @@ namespace IdentityModel.AspNetCore.AccessTokenManagement.Azure
         private readonly SecretClient _secretClient;
         private readonly ILogger<KeyVaultClientAccessTokenCache> _logger;
         private readonly ClientAccessTokenManagementOptions _options;
-        private const string EntrySeparator = "___";
 
         /// <summary>
         /// ctor
@@ -50,36 +49,46 @@ namespace IdentityModel.AspNetCore.AccessTokenManagement.Azure
             }
             catch (RequestFailedException e) when (e.Status == StatusCodes.Status404NotFound) { };          
       
-            if (response is not null 
-                && response.Value is not null 
-                && !string.IsNullOrEmpty(response.Value.Value))
+            if (response is null 
+                || response.Value is null 
+                || string.IsNullOrEmpty(response.Value.Value))
+            {
+                _logger.LogDebug("Cache miss for access token for client: {clientName}", clientName);
+            }
+            else if (!response.Value.Properties.ExpiresOn.HasValue ||
+                (response.Value.Properties.ExpiresOn.HasValue
+                && response.Value.Properties.ExpiresOn <= DateTimeOffset.UtcNow))
+            {
+                _logger.LogDebug("Cached access token for client: {clientName} is expired or does not have proper expiration", clientName);
+                await DeleteAsync(clientName, parameters, cancellationToken);
+            }
+            else
             {
                 try
                 {
                     _logger.LogDebug("Cache hit for access token for client: {clientName}", clientName);
-                    var entry = response.Value.Value;
-
-                    var index = entry.LastIndexOf(EntrySeparator, StringComparison.Ordinal);
+                    var acessToken = response.Value.Value;
 
                     return new ClientAccessToken
                     {
-                        AccessToken = entry.Substring(0, index),
-                        Expiration = DateTimeOffset.FromUnixTimeSeconds(long.Parse(entry.AsSpan(index + EntrySeparator.Length)))
+                        AccessToken = acessToken,
+                        Expiration = response.Value.Properties.ExpiresOn.Value
                     };
                 }
                 catch (Exception ex)
                 {
                     _logger.LogCritical(ex, "Error parsing cached access token for client {clientName}", clientName);
-                    return null;
                 }
             }
 
-            _logger.LogDebug("Cache miss for access token for client: {clientName}", clientName);
             return null;
         }
 
         /// <inheritdoc/>
-        public async Task DeleteAsync(string clientName, ClientAccessTokenParameters parameters, CancellationToken cancellationToken = default)
+        public async Task DeleteAsync(
+            string clientName, 
+            ClientAccessTokenParameters parameters, 
+            CancellationToken cancellationToken = default)
         {
             if (clientName is null) throw new ArgumentNullException(nameof(clientName));
 
@@ -91,22 +100,24 @@ namespace IdentityModel.AspNetCore.AccessTokenManagement.Azure
         }
 
         /// <inheritdoc/>
-        public async Task SetAsync(string clientName, string accessToken, int expiresIn, ClientAccessTokenParameters parameters, CancellationToken cancellationToken = default)
+        public async Task SetAsync(
+            string clientName, 
+            string accessToken, 
+            int expiresIn, 
+            ClientAccessTokenParameters parameters, 
+            CancellationToken cancellationToken = default)
         {
 
             if (clientName is null) throw new ArgumentNullException(nameof(clientName));
 
             var expiration = DateTimeOffset.UtcNow.AddSeconds(expiresIn);
-            var expirationEpoch = expiration.ToUnixTimeSeconds();
             var cacheExpiration = expiration.AddSeconds(-_options.CacheLifetimeBuffer);
-
-            var data = $"{accessToken}{EntrySeparator}{expirationEpoch}";          
 
             _logger.LogDebug("Caching access token for client: {clientName}. Expiration: {expiration}", clientName, cacheExpiration);
 
             var cacheKey = GenerateCacheKey(clientName, parameters);
 
-            var kvSecret = new KeyVaultSecret(cacheKey, data);
+            var kvSecret = new KeyVaultSecret(cacheKey, accessToken);
             kvSecret.Properties.ExpiresOn = expiration;
             await _secretClient.SetSecretAsync(kvSecret, cancellationToken);
         }
