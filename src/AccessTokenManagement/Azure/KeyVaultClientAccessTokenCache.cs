@@ -16,6 +16,7 @@ namespace IdentityModel.AspNetCore.AccessTokenManagement.Azure
         private readonly SecretClient _secretClient;
         private readonly ILogger<KeyVaultClientAccessTokenCache> _logger;
         private readonly ClientAccessTokenManagementOptions _options;
+        private const string KeySeparator = "--";
 
         /// <summary>
         /// ctor
@@ -40,7 +41,7 @@ namespace IdentityModel.AspNetCore.AccessTokenManagement.Azure
             CancellationToken cancellationToken = default)
         {
             var cacheKey = GenerateCacheKey(clientName, parameters);
-            Response<KeyVaultSecret>? response = null;
+            Response<KeyVaultSecret>? response;
 
             try
             {
@@ -49,6 +50,7 @@ namespace IdentityModel.AspNetCore.AccessTokenManagement.Azure
             catch (RequestFailedException e) when (e.Status == StatusCodes.Status404NotFound) 
             {
                 _logger.LogDebug("Cache miss for access token for client: {clientName}", clientName);
+                return null;
             }
 
             if (response!.Value.Properties.ExpiresOn.GetValueOrDefault() <= DateTimeOffset.UtcNow)
@@ -106,6 +108,6 @@ namespace IdentityModel.AspNetCore.AccessTokenManagement.Azure
         private string GenerateCacheKey(
             string clientName,
             ClientAccessTokenParameters? parameters = null) =>
-                "IdentityModel--AccessTokenManagement" + "--" + clientName + "--" + parameters?.Resource ?? "";
+                $"{nameof(IdentityModel)}{KeySeparator}{nameof(AccessTokenManagement)}{KeySeparator}{clientName}{KeySeparator}{parameters?.Resource ?? string.Empty}";
     }
 }
