@@ -1,5 +1,4 @@
 ﻿using Azure;
-using Azure.Identity;
 using Azure.Security.KeyVault.Secrets;
 using Microsoft.AspNetCore.Http;
 using Microsoft.Extensions.Logging;
@@ -47,41 +46,23 @@ namespace IdentityModel.AspNetCore.AccessTokenManagement.Azure
             {
                 response = await _secretClient.GetSecretAsync(cacheKey, cancellationToken: cancellationToken);
             }
-            catch (RequestFailedException e) when (e.Status == StatusCodes.Status404NotFound) { };          
-      
-            if (response is null 
-                || response.Value is null 
-                || string.IsNullOrEmpty(response.Value.Value))
+            catch (RequestFailedException e) when (e.Status == StatusCodes.Status404NotFound) 
             {
                 _logger.LogDebug("Cache miss for access token for client: {clientName}", clientName);
             }
-            else if (!response.Value.Properties.ExpiresOn.HasValue ||
-                (response.Value.Properties.ExpiresOn.HasValue
-                && response.Value.Properties.ExpiresOn <= DateTimeOffset.UtcNow))
+
+            if (response!.Value.Properties.ExpiresOn.GetValueOrDefault() <= DateTimeOffset.UtcNow)
             {
                 _logger.LogDebug("Cached access token for client: {clientName} is expired or does not have proper expiration", clientName);
                 await DeleteAsync(clientName, parameters, cancellationToken);
+                return null;
             }
-            else
+
+            return new ClientAccessToken
             {
-                try
-                {
-                    _logger.LogDebug("Cache hit for access token for client: {clientName}", clientName);
-                    var acessToken = response.Value.Value;
-
-                    return new ClientAccessToken
-                    {
-                        AccessToken = acessToken,
-                        Expiration = response.Value.Properties.ExpiresOn.Value
-                    };
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogCritical(ex, "Error parsing cached access token for client {clientName}", clientName);
-                }
-            }
-
-            return null;
+                AccessToken = response.Value.Value,
+                Expiration = response.Value.Properties.ExpiresOn!.Value
+            };
         }
 
         /// <inheritdoc/>

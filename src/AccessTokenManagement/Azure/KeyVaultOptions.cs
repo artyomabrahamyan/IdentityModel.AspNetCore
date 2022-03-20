@@ -14,7 +14,7 @@ namespace IdentityModel.AspNetCore.AccessTokenManagement.Azure
         public Uri? Url { get; set; }
 
         /// <summary>
-        ///  Azure Key credentials(client, certificate, default, etc.)
+        ///  Azure Key Vault credentials(client, certificate, default, etc.)
         /// </summary>
         public TokenCredential? Credential { get; set; }
     }
